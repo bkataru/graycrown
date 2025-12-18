@@ -1,0 +1,36 @@
+# Nim build artifacts
+nimcache/
+*.exe
+*.dll
+*.so
+*.dylib
+*.a
+*.lib
+*.o
+*.obj
+
+# Nimble
+*.nimble.lock
+
+# Test artifacts
+tests/test_all
+tests/test_embedded
+*.pgm
+
+# Documentation
+docs/
+htmldocs/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Examples output
+examples/output/
