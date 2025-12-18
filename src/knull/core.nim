@@ -117,7 +117,7 @@ const
 # Math functions (embedded-compatible implementations)
 # ============================================================================
 
-when defined(nimskullNoStdlib):
+when defined(knullNoStdlib):
   func absVal*(x: int): int {.inline.} =
     ## Absolute value for integers (embedded mode)
     if x < 0: -x else: x
@@ -204,3 +204,95 @@ else:
 # ============================================================================
 # ImageView and GrayImage operations
 # ============================================================================
+
+func isValid*(img: ImageView | GrayImage): bool {.inline.} =
+  ## Check if image is valid (has data and non-zero dimensions)
+  img.data != nil and img.width > 0 and img.height > 0
+
+func size*(img: ImageView | GrayImage): uint32 {.inline.} =
+  ## Get total number of pixels
+  img.width * img.height
+
+func contains*(img: ImageView | GrayImage; x, y: uint32): bool {.inline.} =
+  ## Check if coordinates are within image bounds
+  x < img.width and y < img.height
+
+func contains*(img: ImageView | GrayImage; x, y: int): bool {.inline.} =
+  ## Check if signed coordinates are within image bounds
+  x >= 0 and y >= 0 and uint32(x) < img.width and uint32(y) < img.height
+
+func idx*(img: ImageView | GrayImage; x, y: uint32): uint32 {.inline.} =
+  ## Convert 2D coordinates to linear index
+  y * img.width + x
+
+func get*(img: ImageView | GrayImage; x, y: uint32): Pixel {.inline.} =
+  ## Get pixel value at (x, y) with bounds checking
+  ## Returns 0 for out-of-bounds coordinates
+  if img.contains(x, y):
+    img.data[img.idx(x, y)]
+  else:
+    0
+
+func get*(img: ImageView | GrayImage; x, y: int): Pixel {.inline.} =
+  ## Get pixel value with signed coordinates
+  if img.contains(x, y):
+    img.data[img.idx(uint32(x), uint32(y))]
+  else:
+    0
+
+func `[]`*(img: ImageView | GrayImage; x, y: uint32): Pixel {.inline.} =
+  ## Subscript operator for pixel access
+  img.get(x, y)
+
+func `[]`*(img: ImageView | GrayImage; x, y: int): Pixel {.inline.} =
+  ## Subscript operator with signed coordinates
+  img.get(x, y)
+
+proc set*(img: var ImageView | var GrayImage; x, y: uint32; value: Pixel) {.inline.} =
+  ## Set pixel value at (x, y) with bounds checking
+  if img.contains(x, y):
+    img.data[img.idx(x, y)] = value
+
+proc set*(img: var ImageView | var GrayImage; x, y: int; value: Pixel) {.inline.} =
+  ## Set pixel value with signed coordinates
+  if img.contains(x, y):
+    img.data[img.idx(uint32(x), uint32(y))] = value
+
+proc `[]=`*(img: var ImageView | var GrayImage; x, y: uint32; value: Pixel) {.inline.} =
+  ## Subscript assignment operator
+  img.set(x, y, value)
+
+proc `[]=`*(img: var ImageView | var GrayImage; x, y: int; value: Pixel) {.inline.} =
+  ## Subscript assignment with signed coordinates
+  img.set(x, y, value)
+
+# ============================================================================
+# ImageView creation
+# ============================================================================
+
+func toView*(img: GrayImage): ImageView {.inline.} =
+  ## Create a non-owning view from GrayImage
+  ImageView(width: img.width, height: img.height, data: img.data)
+
+func initImageView*(data: ptr UncheckedArray[Pixel]; width, height: uint32): ImageView {.inline.} =
+  ## Create ImageView from raw pointer and dimensions
+  ImageView(width: width, height: height, data: data)
+
+func initImageView*(data: var openArray[Pixel]; width, height: uint32): ImageView =
+  ## Create ImageView from openArray (stack or heap allocated)
+  assert data.len >= int(width * height), "Buffer too small for image dimensions"
+  ImageView(
+    width: width,
+    height: height,
+    data: cast[ptr UncheckedArray[Pixel]](addr data[0])
+  )
+
+# ============================================================================
+# GrayImage memory management
+# ============================================================================
+
+when not defined(knullNoStdlib):
+  proc newGrayImage*(width, height: uint32): GrayImage =
+    ## Allocate a new grayscale image with zeroed data
+    ## Call freeGrayImage() when done, or use withImage template
+    if width == 0 or height == 0:
