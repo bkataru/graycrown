@@ -197,3 +197,60 @@ proc writePgm*(img: ImageView | GrayImage; path: string) =
 
   # Write pixel data
   s.writeData(img.data, int(img.width * img.height))
+
+proc writePgmAscii*(img: ImageView | GrayImage; path: string) =
+  ## Write image to ASCII PGM file (larger but human-readable)
+  if not img.isValid:
+    raise newException(IOError, "Cannot write invalid image")
+
+  var s: Stream
+
+  if path == "-":
+    s = newFileStream(stdout)
+  else:
+    s = newFileStream(path, fmWrite)
+
+  if s == nil:
+    raise newException(IOError, "Cannot create file: " & path)
+
+  defer: s.close()
+
+  # Write header
+  s.writeLine(PgmMagicAscii)
+  s.writeLine($img.width & " " & $img.height)
+  s.writeLine("255")
+
+  # Write pixel data (max 70 chars per line)
+  var lineLen = 0
+  for y in 0'u32 ..< img.height:
+    for x in 0'u32 ..< img.width:
+      let valStr = $img[x, y]
+      if lineLen + valStr.len + 1 > 70:
+        s.write("\n")
+        lineLen = 0
+      elif lineLen > 0:
+        s.write(" ")
+        lineLen += 1
+      s.write(valStr)
+      lineLen += valStr.len
+  s.write("\n")
+
+# ============================================================================
+# Image Info
+# ============================================================================
+
+proc getPgmInfo*(path: string): tuple[width, height: int] =
+  ## Get PGM image dimensions without loading pixel data
+  var s: Stream
+
+  if path == "-":
+    raise newException(IOError, "Cannot get info from stdin")
+
+  s = newFileStream(path, fmRead)
+  if s == nil:
+    raise newException(IOError, "Cannot open file: " & path)
+
+  defer: s.close()
+
+  let (width, height, _) = readPgmHeader(s)
+  (width, height)
