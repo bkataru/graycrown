@@ -385,3 +385,85 @@ const
     [1'i8, 0, 2, 1],
     [-7'i8, -4, -4, 3],
   ]
+
+proc computeOrientation*(
+    img: ImageView | GrayImage, x, y: uint32, radius: uint32 = 15
+): float32 =
+  ## Compute patch orientation using intensity centroid method
+  ## Returns angle in radians
+  assert img.isValid, "Image must be valid"
+
+  var m01: float32 = 0.0
+  var m10: float32 = 0.0
+  let radiusInt = int(radius)
+  let radiusSq = int(radius * radius)
+
+  for dy in -radiusInt .. radiusInt:
+    for dx in -radiusInt .. radiusInt:
+      # Circular mask
+      if dx * dx + dy * dy <= radiusSq:
+        let intensity = float32(img[int(x) + dx, int(y) + dy])
+        m01 += float32(dy) * intensity
+        m10 += float32(dx) * intensity
+
+  atan2Approx(m01, m10)
+
+proc computeBriefDescriptor*(img: ImageView | GrayImage, kp: var Keypoint) =
+  ## Compute rotated BRIEF descriptor for a keypoint
+  ## Assumes kp.angle has been computed
+  assert img.isValid, "Image must be valid"
+
+  let x = int(kp.pt.x)
+  let y = int(kp.pt.y)
+  let angle = kp.angle
+  let sinA = sinApprox(angle)
+  let cosA = cosApprox(angle)
+
+  # Clear descriptor
+  for i in 0 ..< 8:
+    kp.descriptor[i] = 0
+
+  # Compute 256-bit descriptor
+  for i in 0 ..< 256:
+    # Rotate pattern points by keypoint angle
+    let dx1 = float32(BriefPattern[i][0]) * cosA - float32(BriefPattern[i][1]) * sinA
+    let dy1 = float32(BriefPattern[i][0]) * sinA + float32(BriefPattern[i][1]) * cosA
+    let dx2 = float32(BriefPattern[i][2]) * cosA - float32(BriefPattern[i][3]) * sinA
+    let dy2 = float32(BriefPattern[i][2]) * sinA + float32(BriefPattern[i][3]) * cosA
+
+    let x1 = x + int(dx1)
+    let y1 = y + int(dy1)
+    let x2 = x + int(dx2)
+    let y2 = y + int(dy2)
+
+    let intensity1 = img[x1, y1]
+    let intensity2 = img[x2, y2]
+
+    if intensity1 > intensity2:
+      kp.descriptor[i div 32] = kp.descriptor[i div 32] or (1'u32 shl uint32(i mod 32))
+
+proc sortKeypointsByResponse(kps: var openArray[Keypoint], n: uint32) =
+  ## Sort keypoints by response (descending) using bubble sort
+  ## Simple but sufficient for small arrays
+  for i in 0'u32 ..< n - 1:
+    for j in 0'u32 ..< n - 1 - i:
+      if kps[j].response < kps[j + 1].response:
+        swap(kps[j], kps[j + 1])
+
+proc extractOrb*(
+    img: ImageView | GrayImage,
+    keypoints: var openArray[Keypoint],
+    maxKeypoints: uint32,
+    threshold: uint32,
+    scoremapBuffer: var openArray[Pixel],
+): uint32 =
+  ## Extract ORB features (FAST + rotated BRIEF)
+  ##
+  ## Parameters:
+  ## - img: Input grayscale image
+  ## - keypoints: Output keypoint array
+  ## - maxKeypoints: Maximum number of keypoints
+  ## - threshold: FAST threshold
+  ## - scoremapBuffer: Temporary buffer (same size as image)
+  ##
+  ## Returns: Number of keypoints extracted

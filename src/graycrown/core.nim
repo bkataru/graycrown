@@ -62,7 +62,7 @@ type
 
   ## Feature keypoint with optional descriptor
   Keypoint* = object
-    pointer*: Point
+    pt*: Point
     response*: uint32
     angle*: float32
     descriptor*: array[8, uint32]
