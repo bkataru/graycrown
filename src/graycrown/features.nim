@@ -567,3 +567,87 @@ proc matchOrb*(
 # ============================================================================
 # Multi-scale ORB Extraction
 # ============================================================================
+
+proc extractPyramidOrb*(img: GrayImage;
+                        keypoints: var openArray[Keypoint];
+                        maxKeypoints: uint32;
+                        threshold: uint32;
+                        buffer: var openArray[Pixel];
+                        nLevels: uint32 = 3): uint32 =
+  ## Extract ORB features from image pyramid for scale invariance
+  ##
+  ## Extracts features at multiple scales and scales coordinates back
+  ## to original image space.
+  ##
+  ## Parameters:
+  ## - img: Input image
+  ## - keypoints: Output keypoint array
+  ## - maxKeypoints: Maximum total keypoints across all levels
+  ## - threshold: FAST threshold
+  ## - buffer: Working buffer (should be at least 2 * img.size)
+  ## - nLevels: Number of pyramid levels (1-4)
+  ##
+  ## Returns: Total number of keypoints
+  assert img.isValid, "Image must be valid"
+
+  let actualLevels = min(nLevels, 4'u32)
+  var totalKps: uint32 = 0
+  var currentImg = img
+  var bufferOffset: uint32 = 0
+
+  # Allocate space for downsampled images
+  var pyramidImages: array[4, GrayImage]
+  pyramidImages[0] = img
+
+  for level in 1'u32 ..< actualLevels:
+    let prevImg = pyramidImages[level - 1]
+    let newW = prevImg.width div 2
+    let newH = prevImg.height div 2
+
+    if newW < 32 or newH < 32:
+      # Image too small
+      break
+
+    # Create downsampled image in buffer
+    let imgSize = newW * newH
+    var downData = cast[ptr UncheckedArray[Pixel]](addr buffer[bufferOffset])
+    pyramidImages[level] = wrapBuffer(downData, newW, newH)
+    bufferOffset += imgSize
+
+    # Downsample
+    var dstView = pyramidImages[level].toView
+    downsample(dstView, prevImg.toView)
+
+  # Extract features from each level
+  for level in 0'u32 ..< actualLevels:
+    if not pyramidImages[level].isValid:
+      break
+
+    let kpsPerLevel = maxKeypoints div actualLevels
+    let remainingKps = maxKeypoints - totalKps
+    let levelKps = min(kpsPerLevel, remainingKps)
+
+    if levelKps == 0:
+      break
+
+    # Scoremap in buffer
+    let levelImg = pyramidImages[level]
+    var scoremap = initImageView(buffer, levelImg.width, levelImg.height)
+
+    # Create temporary array for this level's keypoints
+    var levelKeypoints = newSeq[Keypoint](levelKps)
+
+    let nKps = extractOrb(levelImg.toView, levelKeypoints, levelKps,
+                          threshold, buffer)
+
+    # Scale coordinates back to original image
+    let scale = 1'u32 shl level
+    for i in 0'u32 ..< nKps:
+      keypoints[totalKps] = levelKeypoints[i]
+      keypoints[totalKps].pt.x *= scale
+      keypoints[totalKps].pt.y *= scale
+      totalKps += 1
+
+  totalKps
+
+{.pop.} # raises: []
