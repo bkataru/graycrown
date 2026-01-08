@@ -43,3 +43,70 @@
 # Re-export core types and utilities
 import graycrown/core
 export core
+
+# Re-export image operations
+import graycrown/image
+export image
+
+# Re-export filtering operations
+import graycrown/filters
+export filters
+
+# Re-export morphological operations
+import graycrown/morph
+export morph
+
+# Re-export blob/contour analysis
+import graycrown/blobs
+export blobs
+
+# Re-export integral image operations
+import graycrown/integral
+export integral
+
+# Re-export feature detection
+import graycrown/features
+export features
+
+# Re-export template matching
+import graycrown/template_match
+export template_match
+
+# Re-export LBP cascade detection
+import graycrown/lbp
+export lbp
+
+# Re-export I/O (only when stdlib available)
+when not defined(graycrownNoStdlib):
+  import graycrown/io
+  export io
+
+# ============================================================================
+# Version Information
+# ============================================================================
+
+const
+  GraycrownVersion* = "0.1.0"
+  GraycrownMajor* = 0
+  GraycrownMinor* = 1
+  GraycrownPatch* = 0
+
+# ============================================================================
+# Convenience High-Level Functions
+# ============================================================================
+
+when not defined(graycrownNoStdlib):
+  proc loadAndProcess*(path: string;
+                       processor: proc(img: var GrayImage)): GrayImage =
+    ## Load image, apply processor, return result
+    result = readPgm(path)
+    processor(result)
+
+  proc processAndSave*(img: GrayImage;
+                       path: string;
+                       processor: proc(src: ImageView; dst: var ImageView)) =
+    ## Process image and save to file
+    var output = newGrayImage(img.width, img.height)
+    var dstView = output.toView
+    processor(img.toView, dstView)
+    writePgm(dstView, path)
