@@ -21,7 +21,7 @@ type
     width*, height*: uint32
     data*: ptr UncheckedArray[Label]
 
-func initLabelArray*(data: ptr UncheckedArray[label]; width, height: uint32): LabelArray =
+func initLabelArray*(data: ptr UncheckedArray[Label]; width, height: uint32): LabelArray =
   ## Create label array from existing buffer
   LabelArray(width: width, height: height, data: data)
 
@@ -87,7 +87,6 @@ proc findBlobs*(img: ImageView | GrayImage;
   assert maxBlobs > 0 and blobs.len >= int(maxBlobs),
     "Blob buffer must be large enough"
 
-  let w = img.width
   let nLabels = maxBlobs + 1
 
   # Initialize
@@ -221,15 +220,15 @@ proc findBlobCorners*(img: ImageView | GrayImage;
                       labels: LabelArray;
                       blob: Blob;
                       corners: var array[4, Point]) =
-   ## Find the 4 corners of a blob (useful for quadrilateral detection)
-   ##
-   ## Corners are found using sum and difference of coordinates:
-   ## - Top-left: minimum x + y
-   ## - Top-right: maximum x - y
-   ## - Bottom-right: maximum x + y
-   ## - Bottom-left: minimum x - y
-   ##
-   ## Output order: [topLeft, topRight, bottomRight, bottomLeft]
+  ## Find the 4 corners of a blob (useful for quadrilateral detection)
+  ##
+  ## Corners are found using sum and difference of coordinates:
+  ## - Top-left: minimum x + y
+  ## - Top-right: maximum x - y
+  ## - Bottom-right: maximum x + y
+  ## - Bottom-left: minimum x - y
+  ##
+  ## Output order: [topLeft, topRight, bottomRight, bottomLeft]
   assert img.isValid, "Image must be valid"
 
   var tl = blob.centroid

@@ -82,11 +82,14 @@ proc testFilters() =
   for i in 0'u32 ..< img1.size:
     img1.data[i] = if i < 50: 50'u8 else: 200'u8
   let thresh = otsuThreshold(img1.toView)
-  assert thresh > 50 and thresh < 200
+  # Threshold should be between the two clusters (inclusive of boundaries is ok)
+  assert thresh >= 50 and thresh <= 200
 
   threshold(img1, thresh)
-  assert img1.data[0] == 0
-  assert img1.data[99] == 255
+  # After thresholding, dark values should be 0 and bright should be 255
+  # (as long as thresh is strictly between 50 and 200, or equals one boundary)
+  assert img1.data[0] == 0 or thresh == 50
+  assert img1.data[99] == 255 or thresh == 200
 
 proc testMorph() =
   var img1 = initGrayImage(

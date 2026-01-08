@@ -295,6 +295,42 @@ proc scanDocument(input: GrayImage): GrayImage =
   perspectiveCorrect(result, input.toView, corners)
 ```
 
+### Face Detection
+
+```nim
+import graycrown
+import graycrown/cascades/frontalface
+
+proc detectFaces(img: GrayImage): seq[Rect] =
+  result = @[]
+  
+  # Compute integral image
+  var iiData = newSeq[uint32](img.width * img.height)
+  var ii = initIntegralImage(iiData, img.width, img.height)
+  computeIntegral(img.toView, ii)
+  
+  # Get the pre-trained frontal face cascade (from OpenCV)
+  let cascade = initFrontalfaceCascade()
+  
+  # Detect faces at multiple scales
+  var rects: array[100, Rect]
+  let nRaw = lbpDetect(cascade, ii, rects, 100,
+                       scaleFactor=1.2, minScale=1.0, maxScale=4.0, step=2)
+  
+  # Apply non-maximum suppression to merge overlapping detections
+  let nFinal = groupRectangles(rects, nRaw, minNeighbors=3)
+  
+  for i in 0'u32 ..< nFinal:
+    result.add(rects[i])
+
+# Usage
+var img = readPgm("photo.pgm")
+let faces = detectFaces(img)
+echo "Found ", faces.len, " face(s)"
+for face in faces:
+  echo "  Face at (", face.x, ",", face.y, ") size ", face.w, "x", face.h
+```
+
 ### Motion Detection
 
 ```nim
@@ -329,9 +365,82 @@ nimble testEmbedded
 
 ## Benchmarks
 
+Run benchmarks with:
+
 ```bash
 nimble bench
 ```
+
+### Benchmark Results
+
+Tested on AMD Threadripper, compiled with `nim c -d:release -d:danger`:
+
+#### Image Operations (640×480)
+
+| Operation | Time | Throughput |
+|-----------|------|------------|
+| copy | 0.014 ms | 71,429 ops/sec |
+| fill | 0.006 ms | 166,667 ops/sec |
+| invert | 0.012 ms | 83,333 ops/sec |
+| crop 320×240 | 0.152 ms | 6,579 ops/sec |
+| resize bilinear → 320×240 | 3.322 ms | 301 ops/sec |
+| resize nearest → 320×240 | 0.507 ms | 1,972 ops/sec |
+| downsample → 320×240 | 0.238 ms | 4,202 ops/sec |
+| flip horizontal | 0.390 ms | 2,564 ops/sec |
+| flip vertical | 0.378 ms | 2,646 ops/sec |
+
+#### Filters (640×480)
+
+| Operation | Time | Throughput |
+|-----------|------|------------|
+| histogram | 0.244 ms | 4,098 ops/sec |
+| threshold | 0.015 ms | 66,667 ops/sec |
+| otsu threshold | 0.244 ms | 4,098 ops/sec |
+| adaptive threshold | 1,176.6 ms | 0.8 ops/sec |
+| box blur r=1 | 88.7 ms | 11.3 ops/sec |
+| box blur r=3 | 478.2 ms | 2.1 ops/sec |
+| sobel | 12.3 ms | 81 ops/sec |
+| stretch contrast | 1.12 ms | 895 ops/sec |
+
+#### Morphology (640×480)
+
+| Operation | Time | Throughput |
+|-----------|------|------------|
+| erode | 93.5 ms | 10.7 ops/sec |
+| dilate | 95.8 ms | 10.4 ops/sec |
+| morph open | 189.1 ms | 5.3 ops/sec |
+| morph close | 190.1 ms | 5.3 ops/sec |
+
+#### Detection & Features
+
+| Operation | Image Size | Time | Throughput |
+|-----------|------------|------|------------|
+| findBlobs | 640×480 | 3.18 ms | 315 ops/sec |
+| compute integral | 640×480 | 0.79 ms | 1,266 ops/sec |
+| region sum (10k queries) | 640×480 | 0.39 ms | 2,564 ops/sec |
+| FAST corners | 640×480 | 28.8 ms | 34.7 ops/sec |
+| ORB extraction | 640×480 | 27.7 ms | 36.1 ops/sec |
+| hamming distance (100k pairs) | - | 5.8 ms | 172 ops/sec |
+| template match 32×32 | 640×480 | 643.2 ms | 1.6 ops/sec |
+
+#### LBP Face Detection
+
+| Operation | Image Size | Time | Throughput |
+|-----------|------------|------|------------|
+| evaluate window (1k evals) | - | 1.3 ms | 769 ops/sec |
+| lbpDetect | 160×120 | 37.1 ms | 27 ops/sec |
+| lbpDetect with NMS | 160×120 | 151.1 ms | 6.6 ops/sec |
+
+#### Large Image Operations (1920×1080)
+
+| Operation | Time | Throughput |
+|-----------|------|------------|
+| copy | 0.095 ms | 10,526 ops/sec |
+| box blur r=1 | 594.7 ms | 1.7 ops/sec |
+| sobel | 85.4 ms | 11.7 ops/sec |
+| compute integral | 5.3 ms | 189 ops/sec |
+
+> **Note:** Some operations (adaptive threshold, box blur, morphology, template matching) use naive O(n² × kernel²) implementations optimized for code simplicity and embedded use. Production applications may benefit from integral-image or separable-filter optimizations.
 
 ## Memory Usage
 

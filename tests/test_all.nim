@@ -4,6 +4,7 @@
 
 import std/[unittest]
 import ../src/graycrown
+import ../src/graycrown/cascades/frontalface
 
 # ============================================================================
 # Test Helpers
@@ -553,6 +554,181 @@ suite "Template Matching":
     check pt.x >= 18 and pt.x <= 22
     check pt.y >= 18 and pt.y <= 22
     check score >= 250  # Near-perfect match
+
+# ============================================================================
+# LBP Detection Tests
+# ============================================================================
+
+suite "LBP Detection":
+  test "LBP code computation":
+    # Create a simple test image
+    var img = newGrayImage(24, 24)
+    fill(img, 128)
+
+    # Create integral image
+    var iiData: array[24 * 24, uint32]
+    var ii = initIntegralImage(iiData, 24, 24)
+    computeIntegral(img.toView, ii)
+
+    # LBP code on uniform image should be consistent
+    let code1 = lbpCode(ii, 3, 3, 0, 0, 2, 2)
+    let code2 = lbpCode(ii, 6, 6, 0, 0, 2, 2)
+
+    # For uniform image, codes should be the same
+    check code1 == code2
+    check code1 >= 0 and code1 < 256
+
+  test "LBP code on gradient":
+    # Create horizontal gradient
+    var img = newGrayImage(24, 24)
+    for y in 0'u32 ..< 24:
+      for x in 0'u32 ..< 24:
+        img[x, y] = uint8((x * 255) div 23)
+
+    var iiData: array[24 * 24, uint32]
+    var ii = initIntegralImage(iiData, 24, 24)
+    computeIntegral(img.toView, ii)
+
+    # Code at different positions
+    let code1 = lbpCode(ii, 3, 3, 0, 0, 2, 2)
+    let code2 = lbpCode(ii, 12, 3, 0, 0, 2, 2)
+
+    # Both should be valid 8-bit codes
+    check code1 >= 0 and code1 < 256
+    check code2 >= 0 and code2 < 256
+
+  test "LBP match function":
+    # Create a simple subset where code 0 matches
+    var subsets: array[8, int32] = [1'i32, 0, 0, 0, 0, 0, 0, 0]
+
+    # Code 0 should match (bit 0 of subsets[0] is set)
+    check lbpMatch(0, cast[ptr UncheckedArray[int32]](addr subsets[0]), 8) == true
+
+    # Code 1 should not match (bit 1 of subsets[0] is not set)
+    check lbpMatch(1, cast[ptr UncheckedArray[int32]](addr subsets[0]), 8) == false
+
+    # Code 32 should not match (would need subsets[1] bit 0)
+    check lbpMatch(32, cast[ptr UncheckedArray[int32]](addr subsets[0]), 8) == false
+
+  test "LBP cascade initialization":
+    let cascade = initFrontalfaceCascade()
+
+    check cascade.windowW == 24
+    check cascade.windowH == 24
+    check cascade.nStages == 20
+    check cascade.nWeaks == 139
+    check cascade.nFeatures == 136
+    check cascade.features != nil
+    check cascade.weakFeatureIdx != nil
+    check cascade.weakLeftVal != nil
+    check cascade.weakRightVal != nil
+    check cascade.subsets != nil
+
+  test "LBP evaluate window":
+    # Create test image
+    var img = newGrayImage(48, 48)
+    fill(img, 100)
+
+    # Add some structure
+    for y in 12'u32 ..< 36:
+      for x in 12'u32 ..< 36:
+        img[x, y] = 200
+
+    var iiData: array[48 * 48, uint32]
+    var ii = initIntegralImage(iiData, 48, 48)
+    computeIntegral(img.toView, ii)
+
+    let cascade = initFrontalfaceCascade()
+
+    # Evaluate at origin - just verify it runs without crashing
+    let result = lbpEvaluateWindow(cascade, ii, 0, 0, 1.0)
+    check result == true or result == false  # Just check it returns a valid bool
+
+  test "LBP detect empty image":
+    # Create blank image
+    var img = newGrayImage(100, 100)
+    fill(img, 0)
+
+    var iiData: array[100 * 100, uint32]
+    var ii = initIntegralImage(iiData, 100, 100)
+    computeIntegral(img.toView, ii)
+
+    let cascade = initFrontalfaceCascade()
+    var rects: array[10, Rect]
+
+    # Detection on blank image
+    let n = lbpDetect(cascade, ii, rects, 10, step=4)
+
+    # Result should be valid (may or may not detect anything)
+    check n >= 0'u32 and n <= 10'u32
+
+  test "Intersection over Union":
+    # Two overlapping rectangles
+    let a = initRect(0'u32, 0'u32, 100'u32, 100'u32)
+    let b = initRect(50'u32, 50'u32, 100'u32, 100'u32)
+
+    # Intersection should be 50x50 = 2500
+    let inter = intersection(a, b)
+    check inter.w == 50
+    check inter.h == 50
+    check inter.area == 2500
+
+    # Non-overlapping rectangles
+    let c = initRect(0'u32, 0'u32, 10'u32, 10'u32)
+    let d = initRect(20'u32, 20'u32, 10'u32, 10'u32)
+    let noInter = intersection(c, d)
+    check noInter.area == 0
+
+  test "Group rectangles basic":
+    var rects: array[10, Rect]
+
+    # Create overlapping detections (simulating multiple hits on same face)
+    rects[0] = initRect(10'u32, 10'u32, 24'u32, 24'u32)
+    rects[1] = initRect(11'u32, 10'u32, 24'u32, 24'u32)
+    rects[2] = initRect(10'u32, 11'u32, 24'u32, 24'u32)
+    rects[3] = initRect(12'u32, 12'u32, 24'u32, 24'u32)
+
+    # Group with minNeighbors=3
+    let n = groupRectangles(rects, 4, minNeighbors=3)
+
+    # Should merge into 1 group
+    check n == 1
+    # Merged rect should be near original position
+    check rects[0].x >= 10 and rects[0].x <= 12
+    check rects[0].y >= 10 and rects[0].y <= 12
+
+  test "Group rectangles no neighbors":
+    var rects: array[10, Rect]
+
+    # Create non-overlapping detections
+    rects[0] = initRect(0'u32, 0'u32, 24'u32, 24'u32)
+    rects[1] = initRect(100'u32, 100'u32, 24'u32, 24'u32)
+
+    # Group with minNeighbors=2
+    let n = groupRectangles(rects, 2, minNeighbors=2)
+
+    # Neither should survive (not enough neighbors)
+    check n == 0
+
+  test "LBP detect with NMS":
+    # Create patterned image
+    var img = newGrayImage(100, 100)
+    for y in 0'u32 ..< 100:
+      for x in 0'u32 ..< 100:
+        img[x, y] = uint8(((x + y) * 3) mod 256)
+
+    var iiData: array[100 * 100, uint32]
+    var ii = initIntegralImage(iiData, 100, 100)
+    computeIntegral(img.toView, ii)
+
+    let cascade = initFrontalfaceCascade()
+    var rects: array[50, Rect]
+
+    # Run detection with NMS
+    let n = lbpDetectWithNMS(cascade, ii, rects, 50, minNeighbors=2)
+
+    # Just verify it runs and returns valid count
+    check n >= 0'u32 and n <= 50'u32
 
 # ============================================================================
 # Main

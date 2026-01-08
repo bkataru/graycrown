@@ -592,7 +592,6 @@ proc extractPyramidOrb*(img: GrayImage;
 
   let actualLevels = min(nLevels, 4'u32)
   var totalKps: uint32 = 0
-  var currentImg = img
   var bufferOffset: uint32 = 0
 
   # Allocate space for downsampled images
@@ -630,9 +629,7 @@ proc extractPyramidOrb*(img: GrayImage;
     if levelKps == 0:
       break
 
-    # Scoremap in buffer
     let levelImg = pyramidImages[level]
-    var scoremap = initImageView(buffer, levelImg.width, levelImg.height)
 
     # Create temporary array for this level's keypoints
     var levelKeypoints = newSeq[Keypoint](levelKps)
